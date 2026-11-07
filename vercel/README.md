@@ -25,6 +25,8 @@ For the GitHub OAuth App, set the homepage to the stable Vercel domain and **Aut
 
 The configured production address is `https://scalp-signal-desk-mossnet.vercel.app`. Its GitHub callback is `https://scalp-signal-desk-mossnet.vercel.app/api/auth/callback/github`. Create the OAuth App in the owner's GitHub account, then put its Client ID and Client Secret into the Vercel project's `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` Production variables. Redeploy after saving them.
 
+The existing sensitive Production variables `Client_ID` and `Client_Secret` are also supported directly. There is no need to rename or re-enter them. If both naming conventions are configured, the `AUTH_GITHUB_*` values take precedence.
+
 ## Run locally
 
 From `vercel/`, run `npm ci`, copy `.env.example` to `.env.local`, set its values privately and add `AUTH_TRUST_HOST=true` for local development. Then run `npm run dev`. Local GitHub callback: `http://localhost:3000/api/auth/callback/github`.
