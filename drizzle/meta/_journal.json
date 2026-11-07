@@ -8,6 +8,13 @@
       "when": 1794063216760,
       "tag": "0000_chemical_speed_demon",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1794068535801,
+      "tag": "0001_smart_ravenous",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 
 export const streams = sqliteTable("streams", {
   id: text("id").primaryKey(),
@@ -12,4 +12,6 @@ export const signals = sqliteTable("signals", {
   payload: text("payload").notNull(),
   confirmedAt: integer("confirmed_at").notNull(),
   receivedAt: integer("received_at").notNull(),
-});
+}, table => [
+  index("signals_stream_time").on(table.streamId, table.confirmedAt, table.id),
+]);

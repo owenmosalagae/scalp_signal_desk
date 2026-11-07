@@ -8,7 +8,7 @@ export default async function Pair({ searchParams }: { searchParams: Promise<Rec
     <div className="brand-mark">S</div><p className="eyebrow">SCALP SIGNAL DESK</p>
     <h1>Connect this computer.</h1>
     <p>Pair the MT5 connector running on this Windows computer with your private signal desk.</p>
-    <p className="muted">Continue only if you just started the connector yourself. Your connection key is encrypted for this connector and stays in its memory until you close it.</p>
+    <p className="muted">Continue only if you just started the connector yourself. Your connection key is encrypted for this connector. If you chose to remember pairing, it will be saved using Windows Data Protection for your Windows account.</p>
     <form method="post" action="/api/pair">
       <input type="hidden" name="key" value={key}/><input type="hidden" name="port" value={port}/><input type="hidden" name="state" value={state}/>
       <button className="button primary" type="submit">Pair my MT5 connector ↗</button>

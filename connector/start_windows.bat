@@ -12,11 +12,11 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
+".venv\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -r requirements.txt
 if errorlevel 1 (
   echo Package installation failed. Check your internet connection and try again.
   pause
   exit /b 1
 )
-".venv\Scripts\python.exe" connector.py
+".venv\Scripts\python.exe" -u connector.py %*
 pause

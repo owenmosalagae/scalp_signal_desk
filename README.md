@@ -18,7 +18,9 @@ The deployed app requires the owner's ChatGPT sign-in.
 - Trend table for the chart timeframe, 15m, 45m, 1h, 4h and 1D.
 - Persistent signal history, filters, report copying and CSV export.
 - Browser notifications and optional sound while the app is open.
-- Windows MT5 connector with encrypted pairing and connection status.
+- One Windows MT5 connector for a saved watchlist of up to 20 symbols.
+- Optional user-scoped Windows encryption for remembered pairing.
+- Optional minimized startup when signing in to Windows.
 - Retry-safe signal ingestion that preserves the original setup levels.
 - Installable mobile web app with home-screen icons.
 
@@ -52,14 +54,21 @@ are explicit in this repository because the screenshot did not expose the origin
 2. Install 64-bit Python 3.12 if needed.
 3. Download the connector from the app's MT5 connection page, or use the connector directory.
 4. Extract the ZIP and double-click start_windows.bat.
-5. Enter the exact Market Watch symbol and timeframe, such as XAUUSD and M5.
-6. Approve pairing in the browser on that same computer.
-7. Keep MT5 and the connector running. Open the app on a phone or computer.
+5. Enter comma-separated Market Watch names, such as Step Index, Volatility 75 Index, Boom 500 Index.
+6. Choose one timeframe for the watchlist, then choose whether to remember pairing securely.
+7. Approve the first pairing in the browser on that computer. Later starts reuse the saved setup.
+8. Keep the connector running and select markets from the app dropdown.
+
+Use configure_windows.bat to edit the watchlist. After first setup, optional
+enable_startup.bat starts the connector minimized at Windows sign-in. Use
+disable_startup.bat to undo that, and forget_pairing.bat to remove the saved app key.
+Watchlist preferences and protected pairing are stored under %LOCALAPPDATA%\ScalpSignalDesk.
+The connector can find or launch the saved MT5 terminal; broker sign-in may still be needed.
 
 The app shows labelled example data until the first real connector update arrives.
 The connector sends snapshots approximately every 10 seconds. Signals received
 during a short interruption are retried. On connection it backfills up to 100
-historical setups, identified by their original candle time.
+historical setups per symbol, identified by their original candle time.
 
 Browser alerts require the app to remain open. A fully closed app does not receive
 push messages. The connector reports setups without placing trade orders.
@@ -88,6 +97,7 @@ Use Node.js 22.13 or newer and the pnpm version declared in package.json.
 pnpm install --frozen-lockfile
 pnpm build
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_chemical_speed_demon.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_smart_ravenous.sql
 pnpm dev
 ```
 
@@ -118,6 +128,11 @@ Additional framework details are in [docs/framework-notes.md](docs/framework-not
 | .openai/hosting.json | Current deployment identity and storage binding |
 
 ## Validation
+
+Run python -m unittest discover -s tests -v for connector regression checks.
+Run node tests/check-api.mjs after installing dependencies for API, retry and per-market history checks.
+Native Windows encryption, instance-lock and startup tests run on Windows and are skipped on other platforms.
+
 
 The Python strategy matched the existing indicator calculations across 157 test
 setups using four parameter configurations and multiple tick sizes. TypeScript

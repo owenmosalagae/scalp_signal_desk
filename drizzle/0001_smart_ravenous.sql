@@ -1,0 +1,1 @@
+CREATE INDEX `signals_stream_time` ON `signals` (`stream_id`,`confirmed_at`,`id`);
