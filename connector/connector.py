@@ -89,9 +89,35 @@ def pair(site):
 def bars_from_mt5(mt5, symbol, frame, count):
     result = mt5.copy_rates_from_pos(symbol, frame, 0, count)
     if result is None or len(result) == 0:
-        raise RuntimeError("MT5 price history is unavailable. Open the symbol's chart, let it load, then retry.")
+        error = mt5.last_error()
+        raise RuntimeError(
+            f"MT5 history request failed for {symbol}, timeframe {frame}, {count} bars. "
+            f"MT5 error {error}. Open this symbol's chart in the connected terminal and let it load."
+        )
     return [{name: int(row[name]) if name == "time" else float(row[name])
              for name in ("time", "open", "high", "low", "close")} for row in result]
+
+
+def load_chart_history(mt5, symbol, frame, requested_count, minimum_count):
+    """Bound oversized terminal limits and retry smaller supported history requests."""
+    if requested_count < minimum_count:
+        raise RuntimeError(f"The MT5 chart limit must allow at least {minimum_count} candles.")
+    counts = sorted({max(minimum_count, min(requested_count, limit))
+                     for limit in (100000, 10000, 2000, 500, minimum_count)}, reverse=True)
+    last_failure = RuntimeError("MT5 history is unavailable.")
+    for count in counts:
+        try:
+            bars = bars_from_mt5(mt5, symbol, frame, count)
+        except RuntimeError as error:
+            last_failure = error
+            continue
+        if len(bars) < minimum_count:
+            raise RuntimeError(
+                f"MT5 returned {len(bars)} candles for {symbol}; {minimum_count} are required. "
+                "Load more history in this symbol's chart, then let the connector retry."
+            )
+        return bars, count
+    raise last_failure
 
 
 def post_snapshot(site, token, snapshot):
@@ -129,9 +155,10 @@ def run(args):
         broker = str(account.server if account else "MT5")
         stream = stream_id(broker, symbol, timeframe, settings)
         terminal = mt5.terminal_info()
-        # Use the terminal's complete available chart history for the original EMA seed.
+        # Remember the successful request size so every new candle can reuse it.
+        minimum_history = max(settings["periods"][-1], settings["atrPeriod"]) + 2
         history_count = int(terminal.maxbars) if terminal else 100000
-        history_count = max(history_count, settings["periods"][-1] + 2)
+        history_count = max(history_count, minimum_history)
         frame = getattr(mt5, "TIMEFRAME_" + timeframe)
         chart_key = None
         candles, signals = [], []
@@ -139,16 +166,19 @@ def run(args):
         pending = {}
         next_attempt = 0.0
         retry_delay = 2
-        print("Connected. Leave MT5 and this window running. Press Ctrl+C to stop.")
+        print("App paired. Leave MT5 and this window running. Press Ctrl+C to stop.")
+        print("MT5 terminal:", getattr(terminal, "path", "unavailable"))
+        print("Broker server:", broker)
         while True:
             try:
                 # Refresh the full strategy only at a new bar. Update the forming candle between closes.
                 recent = bars_from_mt5(mt5, symbol, frame, 2)
                 current_key = recent[-1]["time"]
                 if chart_key != current_key:
-                    bars = bars_from_mt5(mt5, symbol, frame, history_count)
-                    if len(bars) < max(settings["periods"][-1], settings["atrPeriod"]) + 2:
-                        raise RuntimeError("Load more MT5 history before monitoring this chart.")
+                    previous_request = history_count
+                    bars, history_count = load_chart_history(mt5, symbol, frame, history_count, minimum_history)
+                    if chart_key is None or history_count != previous_request:
+                        print(f"Loaded {len(bars)} {symbol} {timeframe} candles (request size {history_count}).")
                     candles, signals = calculate(bars, settings, info.trade_tick_size or info.point, info.digits, stream, FRAMES[timeframe])
                     chart_key = bars[-1]["time"]
                     recent = bars[-2:]
@@ -203,7 +233,7 @@ def run(args):
                     retry_delay = min(retry_delay * 2, 60)
                     time.sleep(min(retry_delay, 10))
             except (urllib.error.URLError, TimeoutError, OSError, RuntimeError) as error:
-                print("Waiting for the connection:", str(error)[:180])
+                print("Waiting for the connection:", str(error))
                 next_attempt = time.monotonic() + retry_delay
                 retry_delay = min(retry_delay * 2, 60)
                 time.sleep(min(retry_delay, 10))

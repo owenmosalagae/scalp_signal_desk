@@ -41,6 +41,17 @@ A stale quote can occur when the market is closed. Heartbeats and price timestam
 The connector must run during the monitoring period. Signals during a short disconnection are retried.
 After a restart, historical backfill covers the most recent 100 setups available in MT5.
 
+## History troubleshooting
+History requests are capped at 100,000 candles. If MT5 rejects a request, the connector
+tries smaller requests down to the minimum required for the configured EMA and ATR periods.
+It reuses the successful request size for later candles. Startup logs show the terminal
+path, broker server and loaded candle count. Failed requests show MT5's error code and description.
+
+If history still cannot be read, check that the logged terminal is the one displaying
+your selected symbol. Open that symbol's chart and let it load. With multiple installations,
+use the --terminal option above to select the correct terminal64.exe. A shorter history
+window can affect the initial EMA seed and the number of historical setups available.
+
 Sources
 https://www.mql5.com/en/docs/python_metatrader5
 https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrompos_py
