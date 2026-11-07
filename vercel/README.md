@@ -15,6 +15,7 @@ The original Cloudflare/Sites build stays at the repository root. This frontend 
 | Variable | Value or purpose |
 | --- | --- |
 | `AUTH_SECRET` | A generated secret, at least 32 random bytes. Store only in Vercel environment settings. |
+| `AUTH_URL` | `https://scalp-signal-desk-mossnet.vercel.app` in Production; omit for local development. |
 | `AUTH_GITHUB_ID` | Client ID of a GitHub OAuth App created in the owner's account. |
 | `AUTH_GITHUB_SECRET` | That OAuth App's client secret; set it directly in Vercel, never in chat or Git. |
 | `OWNER_GITHUB_ID` | `282092099`, the stable GitHub user ID for `owenmosalagae`. |
@@ -27,9 +28,11 @@ The configured production address is `https://scalp-signal-desk-mossnet.vercel.a
 
 The existing sensitive Production variables `Client_ID` and `Client_Secret` are also supported directly. There is no need to rename or re-enter them. If both naming conventions are configured, the `AUTH_GITHUB_*` values take precedence.
 
+Production sign-in is pinned to `AUTH_URL`. Requests starting on another production alias redirect to this origin before rendering the sign-in form or handling OAuth, keeping the callback URL and OAuth cookies on the same host. The GitHub OAuth App's registered callback must be exactly `https://scalp-signal-desk-mossnet.vercel.app/api/auth/callback/github`.
+
 ## Run locally
 
-From `vercel/`, run `npm ci`, copy `.env.example` to `.env.local`, set its values privately and add `AUTH_TRUST_HOST=true` for local development. Then run `npm run dev`. Local GitHub callback: `http://localhost:3000/api/auth/callback/github`.
+From `vercel/`, run `npm ci`, copy `.env.example` to `.env.local`, remove `AUTH_URL`, set the other values privately and add `AUTH_TRUST_HOST=true` for local development. Then run `npm run dev`. Local GitHub callback: `http://localhost:3000/api/auth/callback/github`.
 
 ## Verify
 
