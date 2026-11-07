@@ -1,14 +1,24 @@
 # Scalp Signal Desk
 
-A personal MT5 signal dashboard by Owen Mosalagae.
+A personal Deriv and MT5 signal dashboard by Owen Mosalagae.
 
 Scalp Signal Desk follows a five-EMA ribbon strategy and reports each confirmed
 BUY or SELL with its entry, stop loss, three targets, symbol, timeframe and timestamp.
-A Windows connector reads prices from the user's running MetaTrader 5 terminal.
+Direct Deriv mode discovers synthetic and forex markets and streams candles in an open app window. An optional cloud runner supports scanning while devices are off. The Windows MT5 connector remains available for broker-terminal prices.
 
 [Open the app](https://moss-scalp-signals.owenmosalagae.chatgpt.site)
 
 The deployed app requires the owner's ChatGPT sign-in.
+
+## Direct Deriv mode
+
+Open **Markets & connection** in the app. The default is all API-available synthetic indices and forex pairs on M5. Choose either category or a custom watchlist, choose the timeframe, then save. Names and symbol codes are discovered from Deriv rather than entered manually. The checked catalogue returned 46 synthetic indices and 25 forex pairs during validation; availability is refreshed dynamically.
+
+No MT5 terminal, Python installation or Deriv login is required for public data. The app uses 1,000 API candles per timeframe, then streams updates. Initial history and trend-table warmup across all markets takes several minutes. API prices, history seeds and precision can differ from MT5, so the source is labelled per stream. Closed markets retain their history until reopening.
+
+**Current execution modes:** app scanning requires an open, active browser. The optional cloud runner is prepared but must be deployed to a continuously running host before it can scan while the app is closed. See [cloud-runner/README.md](cloud-runner/README.md) and the optional paid Render blueprint in [render.yaml](render.yaml). Deploying this dashboard alone does not deploy that worker.
+
+Both modes record confirmed setups. Background notifications for a fully closed phone app are not implemented; alerts and sounds require an open app.
 
 ## Features
 
@@ -18,6 +28,9 @@ The deployed app requires the owner's ChatGPT sign-in.
 - Trend table for the chart timeframe, 15m, 45m, 1h, 4h and 1D.
 - Persistent signal history, filters, report copying and CSV export.
 - Browser notifications and optional sound while the app is open.
+- Automatic Deriv synthetic/forex discovery, category selection and custom watchlists.
+- Shared browser/cloud EMA and ATR engine with exclusive scanner ownership.
+- All-market signal history and source-labelled chart selection.
 - One Windows MT5 connector for a saved watchlist of up to 20 symbols.
 - Optional user-scoped Windows encryption for remembered pairing.
 - Optional minimized startup when signing in to Windows.
@@ -35,13 +48,13 @@ The defaults match the Scalp_Ribbon_MT5.mq5 indicator included in this project.
 | Stop distance | 1.5 x Wilder ATR |
 | Take-profit multiples | 1.5R, 2R, 3R |
 
-A strictly increasing EMA stack confirms a bullish state. A strictly decreasing
-stack confirms a bearish state. Mixed alignment is neutral. A new BUY or SELL
+A stack ordered from fastest EMA above each slower EMA confirms a bullish state.
+The inverse ordering confirms a bearish state. Mixed alignment is neutral. A new BUY or SELL
 confirms when a closed candle first enters an ordered stack from a different state.
 Returning from neutral can generate another setup in the same direction.
 
 The entry is the confirmed candle's closing price. The stop distance is rounded
-upward to the broker's tradable tick size. Targets are snapped to tradable ticks,
+upward to the source's price increment (MT5 tradable tick size or Deriv API precision). Targets are snapped to tradable ticks,
 and the original levels remain fixed. The trend table provides context and does
 not add a signal filter.
 
@@ -79,13 +92,15 @@ Edit connector/settings.json and restart to change the strategy settings.
 ## Mobile installation
 
 Open the deployed app in Chrome on Android, sign in, and choose the browser's
-Install or Add to Home screen option. The Windows connector remains the price source.
+Install or Add to Home screen option. Direct Deriv mode works on the phone while the app remains active. MT5 mode uses the Windows connector.
 
 ## Technology
 
 - React, TypeScript and Vinext
 - Cloudflare Workers and D1
 - Drizzle ORM and schema migrations
+- Deriv public WebSocket market-data API
+- Optional dependency-free Node.js cloud worker
 - Python and MetaQuotes' official MetaTrader5 integration
 - RSA-OAEP and AES-GCM for connector pairing
 
@@ -98,6 +113,7 @@ pnpm install --frozen-lockfile
 pnpm build
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_chemical_speed_demon.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_smart_ravenous.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_plain_steve_rogers.sql
 pnpm dev
 ```
 
@@ -122,10 +138,23 @@ Additional framework details are in [docs/framework-notes.md](docs/framework-not
 | connector/strategy.py | Python port of the indicator calculations |
 | connector/connector.py | MT5 connection, encrypted pairing and snapshot delivery |
 | indicator/Scalp_Ribbon_MT5.mq5 | Original MT5 reconstruction |
-| lib/ | Shared contracts and labelled example data |
+| lib/ | Shared contracts, Deriv strategy/client/engine and labelled example data |
+| cloud-runner/ | Always-on service and generated shared runtime |
 | db/ and drizzle/ | Database schema and migrations |
 | public/ | App icons, manifest, service worker and connector download |
 | .openai/hosting.json | Current deployment identity and storage binding |
+
+## Deriv checks
+
+```sh
+node scripts/build-deriv-runner.mjs
+node tests/check-deriv.mjs
+node tests/check-api.mjs
+# Optional: live public-data test, no credentials or orders
+node tests/check-deriv-live.mjs
+```
+
+The offline test compares the shared JavaScript engine against the Python MT5 calculation across four settings/precision cases. The API checks cover scanner exclusivity, lease expiry/takeover, settings, source ingestion, original-level preservation and guarded credential download. The HTTP-only internal preview displays the catalogue but direct scanning requires HTTPS; Node smoke tests can exercise the live engine independently.
 
 ## Validation
 

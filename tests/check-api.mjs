@@ -16,7 +16,7 @@ globalThis.testEnv = {
       try {
         const results = statements.map(s => {
           const query = database.prepare(s.sql);
-          if (/^(SELECT|WITH)/i.test(s.sql)) return { results: query.all(...s.values) };
+          if (/^(SELECT|WITH)/i.test(s.sql) || /\bRETURNING\b/i.test(s.sql)) return { results: query.all(...s.values) };
           query.run(...s.values);
           return { success: true, results: [] };
         });
@@ -28,13 +28,18 @@ globalThis.testEnv = {
 };
 for (const [from, to] of [
   ["lib/contracts.ts", ".sites-runtime/check-contracts.mjs"],
+  ["lib/deriv/types.ts", ".sites-runtime/check-deriv-types.mjs"],
+  ["app/api/deriv/config/route.ts", ".sites-runtime/check-deriv-config.mjs"],
+  ["app/api/deriv/lease/route.ts", ".sites-runtime/check-deriv-lease.mjs"],
+  ["app/api/deriv/runner-config/route.ts", ".sites-runtime/check-runner-config.mjs"],
   ["app/api/ingest/route.ts", ".sites-runtime/check-ingest.mjs"],
   ["app/api/state/route.ts", ".sites-runtime/check-state.mjs"],
   ["app/api/pair/route.ts", ".sites-runtime/check-pair.mjs"],
 ]) {
   let source = fs.readFileSync(from, "utf8")
-    .replace('import { env } from "cloudflare:workers";', 'const env = globalThis.testEnv;')
-    .replace('"@/lib/contracts"', '"./check-contracts.mjs"');
+    .replace(/import \{ env \} from ["']cloudflare:workers["'];/, 'const env = globalThis.testEnv;')
+    .replace(/["']@\/lib\/contracts["']/g, '"./check-contracts.mjs"')
+    .replace(/["']@\/lib\/deriv\/types["']/g, '"./check-deriv-types.mjs"');
   fs.writeFileSync(to, ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText);
 }
 const ingest = await import("../.sites-runtime/check-ingest.mjs");
@@ -102,3 +107,43 @@ assert.deepEqual(JSON.parse(new TextDecoder().decode(decrypted)),{site:"https://
 const unauthorized = await pair.POST(new Request("https://desk.example/api/pair",{method:"POST"}));
 assert.equal(unauthorized.status,403);
 console.log("PASS: Authenticated connector pairing, AES/RSA encryption round trip and anonymous pairing rejection.");
+
+const configRoute=await import("../.sites-runtime/check-deriv-config.mjs");
+const leaseRoute=await import("../.sites-runtime/check-deriv-lease.mjs");
+const runnerRoute=await import("../.sites-runtime/check-runner-config.mjs");
+const owner=crypto.randomUUID(),other=crypto.randomUUID();
+function derivRequest(path,body,headers={}){return new Request("https://desk.example"+path,{method:"POST",headers:{"content-type":"application/json",origin:"https://desk.example",...headers},body:JSON.stringify(body)});}
+async function lease(owner,action="acquire",mode="browser"){return leaseRoute.POST(derivRequest("/api/deriv/lease",{owner,action,mode}));}
+assert.equal((await (await configRoute.GET()).json()).config.scope,"both");
+const config={enabled:true,scope:"forex",symbols:[],timeframe:"M15",settings:fixture.settings};
+assert.equal((await configRoute.POST(derivRequest("/api/deriv/config",config))).status,200);
+assert.deepEqual((await (await configRoute.GET()).json()).config,config);
+assert.equal((await configRoute.POST(derivRequest("/api/deriv/config",{...config,timeframe:"M45"}))).status,400);
+assert.equal((await configRoute.POST(derivRequest("/api/deriv/config",{...config,scope:"watchlist"}))).status,400);
+assert.equal((await configRoute.POST(derivRequest("/api/deriv/config",config,{origin:"https://other.example"}))).status,403);
+assert.equal((await lease(owner)).status,200);
+assert.equal((await lease(other)).status,409);
+assert.equal((await lease(other,"heartbeat")).status,409);
+await lease(other,"release");
+assert.equal((await lease(other)).status,409);
+const apiFixture={...fixture,streamId:"d".repeat(64),symbol:"Step Index 100",source:"Deriv API",symbolCode:"stpRNG",scannerOwner:owner,scannerMode:"browser",backfill:true};
+assert.equal((await post({...apiFixture,scannerOwner:other})).status,409);
+assert.equal((await post(apiFixture)).status,200);
+await lease(owner,"release");
+assert.equal((await post(apiFixture)).status,409);
+assert.equal((await lease(other,"acquire","cloud")).status,200);
+assert.equal((await (await configRoute.GET()).json()).scanner.mode,"cloud");
+database.prepare("UPDATE deriv_lease SET expires_at=? WHERE id='main'").run(now-1);
+assert.equal((await lease(owner)).status,200);
+assert.equal((await lease(other,"heartbeat","cloud")).status,409);
+assert.equal((await runnerRoute.POST(derivRequest("/api/deriv/runner-config",{}))).status,403);
+const download=await runnerRoute.POST(derivRequest("/api/deriv/runner-config",{}, {"oai-authenticated-user-id":"fixture-owner"}));
+assert.equal(download.status,200);
+assert.equal(download.headers.get("cache-control"),"no-store");
+assert.match(await download.text(),/SCALP_SITE_TOKEN=fixture-token/);
+const publicConfig=JSON.stringify(await (await configRoute.GET()).json());
+assert.ok(!publicConfig.includes("fixture-token"));
+const compact=await (await state.GET(new Request("https://desk.example/api/state?stream="+busyId))).json();
+assert.equal(compact.signals.filter(s=>s.streamId===busyId).length,100);
+assert.equal(compact.signals.filter(s=>s.streamId===fixture.streamId).length,1);
+console.log("PASS: Deriv settings, invalid scope/timeframe rejection, origin checks, exclusive lease, expiry takeover, cloud mode, guarded ingestion and owner-only private settings download.");

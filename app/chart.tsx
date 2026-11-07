@@ -14,7 +14,7 @@ export default function RibbonChart({ stream, signal, example }: { stream: Snaps
   }, []);
   const narrow = measuredWidth < 500;
   const bars = stream.candles.slice(narrow ? -44 : -112);
-  if (!bars.length) return <div className="chart-empty">Waiting for MT5 candles.</div>;
+  if (!bars.length) return <div className="chart-empty">Loading this market’s candles…</div>;
   const width = Math.max(320, measuredWidth), height = narrow ? 270 : 340;
   const left = 12, right = narrow ? 139 : 185, top = 23, bottom = 37;
   const labelX = width - (narrow ? 132 : 174);

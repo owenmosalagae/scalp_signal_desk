@@ -15,6 +15,13 @@
       "when": 1794068535801,
       "tag": "0001_smart_ravenous",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794070625812,
+      "tag": "0002_plain_steve_rogers",
+      "breakpoints": true
     }
   ]
 }

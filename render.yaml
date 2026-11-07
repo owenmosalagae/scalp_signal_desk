@@ -1,0 +1,13 @@
+# Optional paid always-on service. Review the hosting charge before creating it.
+services:
+  - type: worker
+    name: scalp-deriv-scanner
+    runtime: docker
+    plan: 0.5c-512mb
+    dockerfilePath: ./cloud-runner/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: SCALP_SITE_URL
+        value: https://moss-scalp-signals.owenmosalagae.chatgpt.site
+      - key: SCALP_SITE_TOKEN
+        sync: false

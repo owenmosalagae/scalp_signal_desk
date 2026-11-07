@@ -25,6 +25,12 @@ export const candleSchema = z.object({
 });
 export const snapshotSchema = z.object({
   streamId: z.string().regex(/^[a-f0-9]{64}$/),
+  source: z.enum(["MT5", "Deriv API"]).optional(),
+  symbolCode: z.string().max(64).optional(),
+  scannerMode: z.enum(["browser", "cloud"]).optional(),
+  scannerOwner: z.string().max(100).optional(),
+  marketOpen: z.boolean().optional(),
+  backfill: z.boolean().optional(),
   symbol: z.string().min(1).max(64),
   timeframe: z.string().regex(/^(M[1-9][0-9]*|H[1-9][0-9]*|D1)$/),
   timeframeSeconds: z.number().int().positive().max(86400),
@@ -44,5 +50,5 @@ export const snapshotSchema = z.object({
 });
 export type Signal = z.infer<typeof signalSchema>;
 export type Snapshot = z.infer<typeof snapshotSchema>;
-export type StoredSignal = Signal & { streamId: string; symbol: string; timeframe: string; receivedAt: number; digits: number };
+export type StoredSignal = Signal & { streamId: string; symbol: string; timeframe: string; receivedAt: number; digits: number; backfilled?: boolean; source?: string; broker?: string };
 export type DeskState = { streams: (Snapshot & { receivedAt: number })[]; signals: StoredSignal[] };
