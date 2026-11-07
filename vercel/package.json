@@ -1,0 +1,33 @@
+{
+  "name": "scalp-signal-desk-vercel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "prepare:shared": "node scripts/prepare-shared.mjs",
+    "predev": "npm run prepare:shared",
+    "dev": "next dev",
+    "prebuild": "npm run prepare:shared",
+    "build": "next build --webpack",
+    "start": "next start",
+    "test": "node --test tests/*.test.mjs",
+    "check": "npm run prepare:shared && tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "next-auth": "5.0.0-beta.32",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "lucide-react": "^1.31.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.2.1",
+    "tailwindcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}
