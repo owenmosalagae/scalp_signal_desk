@@ -23,6 +23,8 @@ The original Cloudflare/Sites build stays at the repository root. This frontend 
 
 For the GitHub OAuth App, set the homepage to the stable Vercel domain and **Authorization callback URL** to `https://YOUR-STABLE-DOMAIN/api/auth/callback/github`. Use a separate OAuth App for local development or a different preview domain. No repository permissions or GitHub personal access token are needed for visitor sign-in. Auth.js checks the stable owner ID after GitHub authenticates the account; other accounts are rejected.
 
+The configured production address is `https://scalp-signal-desk-mossnet.vercel.app`. Its GitHub callback is `https://scalp-signal-desk-mossnet.vercel.app/api/auth/callback/github`. Create the OAuth App in the owner's GitHub account, then put its Client ID and Client Secret into the Vercel project's `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` Production variables. Redeploy after saving them.
+
 ## Run locally
 
 From `vercel/`, run `npm ci`, copy `.env.example` to `.env.local`, set its values privately and add `AUTH_TRUST_HOST=true` for local development. Then run `npm run dev`. Local GitHub callback: `http://localhost:3000/api/auth/callback/github`.
@@ -48,3 +50,5 @@ This deployment does not start a 24/7 cloud scanner or enable closed-app push no
 - [Vercel monorepos](https://vercel.com/docs/monorepos)
 
 The Auth.js v5 package is pinned to `5.0.0-beta.32`; upgrade it deliberately and rerun sign-in and API protection checks.
+
+The Vercel application uses Next.js `16.4.5` and Zod `4.6.7` to include fixes for the dependency advisories reported by the first cloud build. Contract compatibility tests cover a scanner snapshot, invalid ribbon settings, candle limits and finite prices alongside the API proxy tests.
