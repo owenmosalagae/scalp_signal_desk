@@ -1,13 +1,14 @@
 import { auth, signIn } from '@/auth';
 import { isOwnerSession } from '@/server/policy.mjs';
 import { redirect } from 'next/navigation';
+import { githubConfigured } from '@/server/github-config.mjs';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SignIn({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   if (isOwnerSession(await auth())) redirect('/');
   const { error } = await searchParams;
-  const configured = !!(process.env.AUTH_SECRET && process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET);
+  const configured = githubConfigured();
   return <main className="pair-page"><section className="pair-card">
     <div className="brand-mark">S</div><p className="eyebrow">SCALP SIGNAL DESK</p>
     <h1>Your private signal desk.</h1>
