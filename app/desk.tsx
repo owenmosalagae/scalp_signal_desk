@@ -11,6 +11,7 @@ import { timeframeAction } from "@/lib/deriv/chart-navigation";
 import { strategyStreamSeed } from "@/lib/deriv/engine";
 import { sha256 } from "@/lib/deriv/strategy";
 import StrategyGuide from "./strategy-guide";
+import MarketPicker from "./market-picker";
 
 type Tab = "monitor" | "signals" | "strategy" | "connect";
 const money = (price: number, digits = 2) => price.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -278,9 +279,10 @@ export default function Desk() {
 
         {(tab === "monitor" || tab === "signals") && <>
           <div className="stream-bar"><div className="stream-select"><span className="gold-coin">Au</span><div><b>{stream.symbol}</b><small>{stream.timeframe} · {isExample ? "Example workspace" : stream.broker}</small></div>
-            {!isExample && <select aria-label="Select monitored market" value={stream.streamId} disabled={timeframeSaving} onChange={event => selectStream(event.target.value)}>{!data.streams.some(value => value.streamId === stream.streamId) && <option value={stream.streamId}>{stream.symbol} · {stream.timeframe} · Loading…</option>}{data.streams.map(s => <option key={s.streamId} value={s.streamId}>{s.symbol} · {s.timeframe} · {s.source === "Deriv API" ? "API" : "MT5"} · {strategyName(s.strategyId)}</option>)}</select>}</div>
+          </div>
             <div className="stream-status"><span className={"status-dot " + (connected ? "green" : "amber")}/>{timeframeLoading ? "Loading " + stream.timeframe + " candles" : isExample ? "Loading live markets" : connected ? direct && stream.marketOpen === false ? "Market closed" : quoteStale ? "Connected · waiting for quote" : direct ? "Receiving Deriv API prices" : "Receiving MT5 prices" : "Connection interrupted"}<span className="status-divider"/><span>{isExample ? "Confirmed candles" : "Connected markets · " + data.streams.filter(value => now - value.receivedAt < (value.source === "Deriv API" ? 100 : 50)).length}</span></div>
           </div>
+          {!isExample && <MarketPicker streams={data.streams} current={stream} catalog={deriv.catalog} busy={timeframeSaving} onSelect={selectStream}/>}
           <div className="stats-grid">
             <div className="stat"><span>{sessionStrategy ? "Session bias" : "Ribbon direction"} <Layers3 size={14}/></span><div className={state.toLowerCase()}><span className={"status-dot " + (state === "Bullish" ? "green" : state === "Bearish" ? "red" : "")}/>{state}</div><small>Latest closed {stream.timeframe} candle</small></div>
             <div className="stat"><span>Latest setup <Radio size={14}/></span><div>{latest ? <><b className={latest.direction.toLowerCase()}>{latest.direction}</b><span className="stat-suffix">{stream.symbol}</span></> : "Waiting"}</div><small>{latest ? timestamp(latest.confirmedAt) : sessionStrategy ? "Waiting for a confirmed retest" : "Waiting for a confirmed stack"}</small></div>
