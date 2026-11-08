@@ -102,4 +102,4 @@ export const snapshotSchema = z.object({
 export type Signal = z.infer<typeof signalSchema>;
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export type StoredSignal = Signal & { streamId: string; symbol: string; timeframe: string; receivedAt: number; digits: number; backfilled?: boolean; source?: string; broker?: string; settings?: z.infer<typeof settingsSchema>; sessionSettings?: z.infer<typeof sessionSettingsSchema> };
-export type DeskState = { streams: (Snapshot & { receivedAt: number })[]; signals: StoredSignal[] };
+export type DeskState = { streams: (Snapshot & { receivedAt: number })[]; signals: StoredSignal[]; scanner?: { mode: string; heartbeatAt: number; expiresAt: number } | null };

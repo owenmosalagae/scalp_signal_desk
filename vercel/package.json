@@ -13,7 +13,7 @@
     "prebuild": "npm run prepare:shared",
     "build": "next build --webpack",
     "start": "next start",
-    "test": "node --test tests/*.test.mjs ../tests/session-fvg.test.mjs ../tests/timeframe.test.mjs",
+    "test": "node --test tests/*.test.mjs ../tests/session-fvg.test.mjs ../tests/timeframe.test.mjs ../tests/connection.test.mjs",
     "check": "npm run prepare:shared && tsc --noEmit",
     "pretest": "npm run prepare:shared && node ../scripts/build-deriv-runner.mjs"
   },

@@ -12,6 +12,8 @@ import { strategyStreamSeed } from "@/lib/deriv/engine";
 import { sha256 } from "@/lib/deriv/strategy";
 import StrategyGuide from "./strategy-guide";
 import MarketPicker from "./market-picker";
+import { feedHealth } from "@/lib/deriv/feed-health";
+import { withRequestTimeout } from "@/lib/deriv/request";
 
 type Tab = "monitor" | "signals" | "strategy" | "connect";
 const money = (price: number, digits = 2) => price.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -43,6 +45,8 @@ export default function Desk() {
   const [manualExample, setManualExample] = useState(false);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
+  const [online, setOnline] = useState(true);
+  const refreshData = useRef<() => void>(() => {});
   const [timeframeSaving, setTimeframeSaving] = useState(false);
   const [timeframeError, setTimeframeError] = useState("");
   const [requestedChart, setRequestedChart] = useState<DeskState['streams'][number] | null>(null);
@@ -76,8 +80,8 @@ export default function Desk() {
   const direct = stream.source === "Deriv API";
   const timeframeOptions = Object.keys(FRAMES).map(frame => ({ frame, action: timeframeAction(stream, data.streams, deriv.config, frame, deriv.catalog.find(market => market.code === stream.symbolCode)) }));
   const canScanTimeframe = timeframeOptions.some(option => option.action.kind === 'scan');
-  const connected = !isExample && now - stream.receivedAt < (direct ? 100 : 50);
-  const quoteStale = connected && now - stream.quoteTime > Math.max(120, stream.timeframeSeconds * 3);
+  const health = feedHealth({ stream, now, config: deriv.configReady ? deriv.config : undefined, scanner: data.scanner, market: deriv.catalog.find(market => market.code === stream.symbolCode), phase: deriv.status.phase, example: isExample, loadingFrame: timeframeLoading || timeframeSaving, offline: !online, deskError: apiError });
+  const connected = health.kind === "live" || health.kind === "quote_wait";
   const state = stream.trends[0]?.state || "Loading";
   const filtered = (tab === "signals" && historyAll ? shown.signals : signals).filter(signal => (filter === "ALL" || signal.direction === filter) && (tab !== "signals" || historyStrategy === "all" || (signal.strategyId || "scalp_ribbon") === historyStrategy) &&
     (signal.symbol + " " + signal.direction + " " + signal.timeframe + " " + strategyName(signal.strategyId)).toLowerCase().includes(search.toLowerCase()));
@@ -121,9 +125,12 @@ export default function Desk() {
       if (running) return;
       running = true;
       try {
-        const response = await fetch("/api/state?stream=" + encodeURIComponent(selectedRef.current) + (tabRef.current === "signals" ? "&all=1" : ""), { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error("The signal desk is temporarily unavailable.");
-        const next = await response.json() as DeskState;
+        const next = await withRequestTimeout(async signal => {
+          const response = await fetch("/api/state?stream=" + encodeURIComponent(selectedRef.current) + (tabRef.current === "signals" ? "&all=1" : ""), { cache: "no-store", signal });
+          if (response.status === 401 || response.status === 403) throw new Error("Sign in again to refresh prices.");
+          if (!response.ok) throw new Error("The signal desk is temporarily unavailable. Retrying automatically.");
+          return await response.json() as DeskState;
+        }, controller.signal);
         if (!alive) return;
         if (known.current === null) known.current = new Set(next.signals.map(signal => signal.id));
         else {
@@ -157,13 +164,19 @@ export default function Desk() {
         setSelectedStream(current => current || next.streams.find(value => (value.strategyId || "scalp_ribbon") === activeStrategyRef.current)?.streamId || "");
         setApiError("");
       } catch (error) {
-        if (alive && !controller.signal.aborted) setApiError((error as Error).message || "Connection interrupted.");
+        if (alive && !controller.signal.aborted) setApiError((error as Error).message || "Could not refresh saved prices. Retrying automatically.");
       } finally { if (alive) setLoading(false); running = false; }
     }
-    poll();
-    const interval = setInterval(() => { setNow(Date.now() / 1000); poll(); }, 5000);
+    const refresh = () => { setOnline(navigator.onLine); setNow(Date.now() / 1000); void poll(); };
+    const visible = () => { if (!document.hidden) refresh(); };
+    const offline = () => setOnline(false);
+    refreshData.current = refresh;
+    refresh();
+    window.addEventListener("online", refresh); window.addEventListener("offline", offline); window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", visible);
+    const interval = setInterval(() => { setNow(Date.now() / 1000); void poll(); }, 5000);
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-    return () => { alive = false; clearInterval(interval); controller.abort(); };
+    return () => { alive = false; clearInterval(interval); controller.abort(); refreshData.current = () => {}; window.removeEventListener("online", refresh); window.removeEventListener("offline", offline); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", visible); };
   }, []);
 
   useEffect(() => {
@@ -273,14 +286,14 @@ export default function Desk() {
           <p className="subtitle">{tab === "monitor" ? "Follow your selected strategy and its confirmed trade levels." : tab === "signals" ? "A record of your confirmed setups and their original trade levels." : tab === "strategy" ? "Read the confirmation, invalidation and price-source rules for your active scanner." : "Choose your markets and scan directly with Deriv."}</p></div>
           <div className="heading-actions">{tab !== "connect" && <button className="button secondary" onClick={enableAlerts}><Bell size={15}/>{alerts ? "Alerts on" : "Enable alerts"}</button>}<button className="button primary" onClick={() => setTab("connect")}><Link2 size={15}/>Manage markets<ArrowUpRight size={14}/></button></div></div>
 
-        {apiError && <div className="notice error" role="alert">{apiError} Showing the last available view.</div>}
+        {apiError && online && <div className="notice" role="alert">{apiError} Showing the last saved prices.<button onClick={() => refreshData.current()}>Retry now</button></div>}
         {isExample && tab !== "connect" && <div className="notice"><span className="example-tag">EXAMPLE</span><span>{loading ? "Checking your live feeds. " : ""}You're viewing example prices until a live market is ready. Deriv candle histories load automatically.</span><button onClick={() => data.streams.length ? setManualExample(false) : setTab("connect")}>{data.streams.length ? "Return to live" : "Set up connection"}<ChevronRight size={13}/></button></div>}
-        {!isExample && !connected && <div className="notice error"><Radio size={16}/><span>This market has stopped updating. Last received {timestamp(stream.receivedAt)}. {direct ? "Open Markets & connection to check the Deriv scanner." : "Check MT5 and the connector window."}</span></div>}
+        {!isExample && health.notice && <div className={"notice " + (health.tone === "red" ? "error" : "")} role="status"><Radio size={16}/><span>{health.notice}</span>{["delayed", "waiting", "stale", "reconnecting"].includes(health.kind) && <button onClick={() => refreshData.current()}>Retry now</button>}</div>}
 
         {(tab === "monitor" || tab === "signals") && <>
           <div className="stream-bar"><div className="stream-select"><span className="gold-coin">Au</span><div><b>{stream.symbol}</b><small>{stream.timeframe} · {isExample ? "Example workspace" : stream.broker}</small></div>
           </div>
-            <div className="stream-status"><span className={"status-dot " + (connected ? "green" : "amber")}/>{timeframeLoading ? "Loading " + stream.timeframe + " candles" : isExample ? "Loading live markets" : connected ? direct && stream.marketOpen === false ? "Market closed" : quoteStale ? "Connected · waiting for quote" : direct ? "Receiving Deriv API prices" : "Receiving MT5 prices" : "Connection interrupted"}<span className="status-divider"/><span>{isExample ? "Confirmed candles" : "Connected markets · " + data.streams.filter(value => now - value.receivedAt < (value.source === "Deriv API" ? 100 : 50)).length}</span></div>
+            <div className="stream-status" role="status" title={health.detail}><span className={"status-dot " + (health.tone === "muted" ? "" : health.tone)}/>{health.label}<span className="status-divider"/><span>{isExample ? "Confirmed candles" : "Recent market updates · " + data.streams.filter(value => now - value.receivedAt < (value.source === "Deriv API" ? 100 : 50)).length}</span></div>
           </div>
           {!isExample && <MarketPicker streams={data.streams} current={stream} catalog={deriv.catalog} busy={timeframeSaving} onSelect={selectStream}/>}
           <div className="stats-grid">
