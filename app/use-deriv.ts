@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG, resolveConfig } from '@/lib/deriv/types';
 import type { DerivConfig, Market, ScannerStatus } from '@/lib/deriv/types';
 export function useDerivScanner(){
   const [config,setConfig]=useState<DerivConfig>(DEFAULT_CONFIG);
+  const [configReady,setConfigReady]=useState(false);
   const [catalog,setCatalog]=useState<Market[]>([]);
   const [status,setStatus]=useState<ScannerStatus>({phase:'connecting',message:'Checking the Deriv scanner…',loaded:0,total:0,errors:{}});
   const [scannerMode,setScannerMode]=useState('');
@@ -27,7 +28,7 @@ export function useDerivScanner(){
         backendSupportsStrategies.current=next.capabilities?.strategySwitching===1;
         next.config=resolveConfig(next.config);
         if(next.config.strategy==='session_fvg'&&!backendSupportsStrategies.current)throw new Error('The backend needs the strategy-switching update before Session FVG can run.');
-        setConfig(next.config);setScannerMode(next.scanner?.mode||'');
+        setConfig(next.config);setConfigReady(true);setScannerMode(next.scanner?.mode||'');
         const key=JSON.stringify(next.config);
         if(engine&&(key!==signature||!next.config.enabled)){engine.stop();engine=null;engineRef.current=null;await lease('release');}
         if(!crypto.subtle){setStatus({phase:'idle',message:'Direct scanning requires HTTPS. Open your published signal desk to scan.',loaded:0,total:0,errors:{}});return;}
@@ -51,6 +52,7 @@ export function useDerivScanner(){
     return()=>{alive=false;clearInterval(interval);discovery.close();engine?.stop();engineRef.current=null;void lease('release').catch(()=>{});};
   },[revision]);
   async function save(next:DerivConfig){
+    if(!configReady)throw new Error('Scanner settings are still loading. Try again shortly.');
     if(next.strategy==='session_fvg'&&!backendSupportsStrategies.current)throw new Error('Update the private backend with strategy switching before selecting Session FVG.');
     const response=await fetch('/api/deriv/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)});
     if(!response.ok){const result=await response.json() as {error?:string};throw new Error(result.error||'Could not save scanner settings.');}
@@ -58,5 +60,5 @@ export function useDerivScanner(){
     if(next.strategy==='session_fvg'&&(saved.capabilities?.strategySwitching!==1||saved.config?.strategy!=='session_fvg'))throw new Error('The backend did not retain the selected strategy. Update it before scanning.');
     setConfig(resolveConfig(saved.config||next));setRevision(v=>v+1);
   }
-  return {config,catalog,status,scannerMode,save};
+  return {config,configReady,catalog,status,scannerMode,save};
 }

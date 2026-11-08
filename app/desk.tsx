@@ -6,7 +6,10 @@ import { example } from "@/lib/example";
 import RibbonChart from "./chart";
 import DerivMarkets from "./deriv-markets";
 import { useDerivScanner } from "./use-deriv";
-import { strategyName } from "@/lib/deriv/types";
+import { FRAMES, strategyName } from "@/lib/deriv/types";
+import { timeframeAction } from "@/lib/deriv/chart-navigation";
+import { strategyStreamSeed } from "@/lib/deriv/engine";
+import { sha256 } from "@/lib/deriv/strategy";
 import StrategyGuide from "./strategy-guide";
 
 type Tab = "monitor" | "signals" | "strategy" | "connect";
@@ -39,6 +42,10 @@ export default function Desk() {
   const [manualExample, setManualExample] = useState(false);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
+  const [timeframeSaving, setTimeframeSaving] = useState(false);
+  const [timeframeError, setTimeframeError] = useState("");
+  const [requestedChart, setRequestedChart] = useState<DeskState['streams'][number] | null>(null);
+  const timeframeRequest = useRef(0);
   const [now, setNow] = useState(Date.now() / 1000);
   const [filter, setFilter] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -55,7 +62,10 @@ export default function Desk() {
 
   const isExample = manualExample || data.streams.length === 0;
   const shown = isExample ? example : data;
-  const stream = shown.streams.find(value => value.streamId === selectedStream) || shown.streams.find(value => (value.strategyId || "scalp_ribbon") === (deriv.config.strategy || "scalp_ribbon")) || shown.streams[0];
+  const savedStream = shown.streams.find(value => value.streamId === selectedStream) || shown.streams.find(value => (value.strategyId || "scalp_ribbon") === (deriv.config.strategy || "scalp_ribbon")) || shown.streams[0];
+  const requestedStream = requestedChart && shown.streams.find(value => value.streamId === requestedChart.streamId);
+  const stream = requestedChart ? requestedStream || requestedChart : savedStream;
+  const timeframeLoading = !!requestedChart && !requestedStream?.candles.length;
   const sessionStrategy = stream.strategyId === "session_fvg";
   const sessionContext = stream.sessionContext;
   const signals = shown.signals.filter(signal => signal.streamId === stream.streamId);
@@ -63,13 +73,43 @@ export default function Desk() {
   selectedRef.current = stream.streamId;
   tabRef.current = tab;
   const direct = stream.source === "Deriv API";
+  const timeframeOptions = Object.keys(FRAMES).map(frame => ({ frame, action: timeframeAction(stream, data.streams, deriv.config, frame, deriv.catalog.find(market => market.code === stream.symbolCode)) }));
+  const canScanTimeframe = timeframeOptions.some(option => option.action.kind === 'scan');
   const connected = !isExample && now - stream.receivedAt < (direct ? 100 : 50);
   const quoteStale = connected && now - stream.quoteTime > Math.max(120, stream.timeframeSeconds * 3);
   const state = stream.trends[0]?.state || "Loading";
   const filtered = (tab === "signals" && historyAll ? shown.signals : signals).filter(signal => (filter === "ALL" || signal.direction === filter) && (tab !== "signals" || historyStrategy === "all" || (signal.strategyId || "scalp_ribbon") === historyStrategy) &&
     (signal.symbol + " " + signal.direction + " " + signal.timeframe + " " + strategyName(signal.strategyId)).toLowerCase().includes(search.toLowerCase()));
 
-  useEffect(() => { setSelectedStream(""); }, [deriv.config.strategy]);
+  useEffect(() => { setSelectedStream(""); setRequestedChart(null); setTimeframeError(""); timeframeRequest.current++; }, [deriv.config.strategy, manualExample]);
+  useEffect(() => {
+    if (requestedChart && requestedStream?.candles.length) { setSelectedStream(requestedChart.streamId); setRequestedChart(null); }
+  }, [requestedChart, requestedStream]);
+
+  function selectStream(id: string) {
+    timeframeRequest.current++; setRequestedChart(null); setTimeframeError(""); setSelectedStream(id);
+  }
+  async function changeTimeframe(frame: string) {
+    if (timeframeSaving || frame === stream.timeframe) return;
+    const action = timeframeAction(stream, data.streams, deriv.config, frame, deriv.catalog.find(market => market.code === stream.symbolCode));
+    setTimeframeError("");
+    if (action.kind === 'unavailable') { setTimeframeError(action.message); return; }
+    if (action.kind === 'select') { selectStream(action.streamId); return; }
+    const request = ++timeframeRequest.current;
+    setTimeframeSaving(true);
+    const previous = stream;
+    try {
+      const streamId = await sha256(strategyStreamSeed(action.symbolCode, action.config));
+      if (request !== timeframeRequest.current) return;
+      setRequestedChart({ ...stream, streamId, timeframe: frame, timeframeSeconds: FRAMES[frame], settings: action.config.settings,
+        candles: [], signals: [], receivedAt: 0, quoteTime: 0, trends: stream.trends.map((trend, index) => ({ frame: index ? trend.frame : frame + ' (chart)', state: 'Loading' })) });
+      await deriv.save(action.config);
+      if (request !== timeframeRequest.current) return;
+      setSelectedStream(streamId);
+    } catch (error) {
+      if (request === timeframeRequest.current) { setRequestedChart(null); setSelectedStream(previous.streamId); setTimeframeError((error as Error).message || 'Could not change timeframe. Try again.'); }
+    } finally { setTimeframeSaving(false); }
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -238,8 +278,8 @@ export default function Desk() {
 
         {(tab === "monitor" || tab === "signals") && <>
           <div className="stream-bar"><div className="stream-select"><span className="gold-coin">Au</span><div><b>{stream.symbol}</b><small>{stream.timeframe} · {isExample ? "Example workspace" : stream.broker}</small></div>
-            {!isExample && <select aria-label="Select monitored market" value={stream.streamId} onChange={event => setSelectedStream(event.target.value)}>{data.streams.map(s => <option key={s.streamId} value={s.streamId}>{s.symbol} · {s.timeframe} · {s.source === "Deriv API" ? "API" : "MT5"} · {strategyName(s.strategyId)}</option>)}</select>}</div>
-            <div className="stream-status"><span className={"status-dot " + (connected ? "green" : "amber")}/>{isExample ? "Loading live markets" : connected ? direct && stream.marketOpen === false ? "Market closed" : quoteStale ? "Connected · waiting for quote" : direct ? "Receiving Deriv API prices" : "Receiving MT5 prices" : "Connection interrupted"}<span className="status-divider"/><span>{isExample ? "Confirmed candles" : "Connected markets · " + data.streams.filter(value => now - value.receivedAt < (value.source === "Deriv API" ? 100 : 50)).length}</span></div>
+            {!isExample && <select aria-label="Select monitored market" value={stream.streamId} disabled={timeframeSaving} onChange={event => selectStream(event.target.value)}>{!data.streams.some(value => value.streamId === stream.streamId) && <option value={stream.streamId}>{stream.symbol} · {stream.timeframe} · Loading…</option>}{data.streams.map(s => <option key={s.streamId} value={s.streamId}>{s.symbol} · {s.timeframe} · {s.source === "Deriv API" ? "API" : "MT5"} · {strategyName(s.strategyId)}</option>)}</select>}</div>
+            <div className="stream-status"><span className={"status-dot " + (connected ? "green" : "amber")}/>{timeframeLoading ? "Loading " + stream.timeframe + " candles" : isExample ? "Loading live markets" : connected ? direct && stream.marketOpen === false ? "Market closed" : quoteStale ? "Connected · waiting for quote" : direct ? "Receiving Deriv API prices" : "Receiving MT5 prices" : "Connection interrupted"}<span className="status-divider"/><span>{isExample ? "Confirmed candles" : "Connected markets · " + data.streams.filter(value => now - value.receivedAt < (value.source === "Deriv API" ? 100 : 50)).length}</span></div>
           </div>
           <div className="stats-grid">
             <div className="stat"><span>{sessionStrategy ? "Session bias" : "Ribbon direction"} <Layers3 size={14}/></span><div className={state.toLowerCase()}><span className={"status-dot " + (state === "Bullish" ? "green" : state === "Bearish" ? "red" : "")}/>{state}</div><small>Latest closed {stream.timeframe} candle</small></div>
@@ -256,8 +296,10 @@ export default function Desk() {
             {sessionContext.setup && <p>{sessionContext.setup.direction} gap {money(sessionContext.setup.gapLow, stream.digits)}–{money(sessionContext.setup.gapHigh, stream.digits)} · retest level {money(sessionContext.setup.retestPrice, stream.digits)} · {sessionContext.setup.status.replaceAll("_", " ")} · expires {timestamp(sessionContext.setup.expiresAt)}</p>}
           </section>}
           <div className="monitor-grid">
-            <section className="panel chart-panel"><div className="panel-header"><div><h2>{sessionStrategy ? "Price, range & FVG" : "Price & ribbon"}</h2><span className="muted small-text">{stream.symbol} · {stream.timeframe}</span></div><div className="chart-controls"><button className={"tiny-button " + (sound ? "selected" : "")} onClick={toggleSound}><Volume2 size={13}/>{sound ? "Sound on" : "Sound off"}</button><span className="chart-frame">{stream.timeframe}</span></div></div>
-              <RibbonChart stream={stream} signal={latest} example={isExample}/></section>
+            <section className="panel chart-panel"><div className="panel-header"><div><h2>{sessionStrategy ? "Price, range & FVG" : "Price & ribbon"}</h2><span className="muted small-text">{stream.symbol} · {stream.timeframe}</span></div><div className="chart-controls"><button className={"tiny-button " + (sound ? "selected" : "")} onClick={toggleSound}><Volume2 size={13}/>{sound ? "Sound on" : "Sound off"}</button><label className="chart-timeframe"><span>Timeframe</span><select className="chart-frame" aria-label="Chart timeframe" aria-describedby="chart-timeframe-help" value={stream.timeframe} disabled={timeframeSaving || isExample || sessionStrategy || !deriv.configReady} onChange={event => void changeTimeframe(event.target.value)}>{!Object.hasOwn(FRAMES, stream.timeframe) && <option value={stream.timeframe}>{stream.timeframe}</option>}{timeframeOptions.map(({ frame, action }) => <option key={frame} value={frame} disabled={!isExample && action.kind === 'unavailable'}>{frame}</option>)}</select></label></div></div>
+              <p id="chart-timeframe-help" className="chart-timeframe-help">{sessionStrategy ? 'Session Range + FVG uses M5 confirmation. Choose Scalp Ribbon in Manage markets for other timeframes.' : isExample ? 'Choose a live market to change its timeframe.' : direct ? canScanTimeframe ? 'Changing timeframe updates the scanner for all selected Deriv markets.' : 'Saved chart view. Available timeframes use recorded data; manage markets to scan a new timeframe.' : 'Available timeframes come from this market’s MT5 connector.'}</p>
+              {timeframeError && <p className="chart-timeframe-message error" role="alert">{timeframeError}</p>}
+              {(timeframeSaving || timeframeLoading) ? <div className="chart-loading" role="status" aria-live="polite"><span className="loading-ring"/><strong>{timeframeSaving ? 'Saving timeframe…' : `Loading ${stream.symbol} · ${stream.timeframe}…`}</strong><p>{!deriv.config.enabled ? 'The scanner is paused. Enable it in Manage markets to load new candles.' : deriv.status.phase === 'error' ? deriv.status.message : 'Waiting for candles from the scanner. You can choose another timeframe while it loads.'}</p></div> : <RibbonChart stream={stream} signal={latest} example={isExample}/>}</section>
             <section className="panel trends-panel"><div className="panel-header"><h2>Trend alignment</h2><Layers3 size={15} className="muted"/></div><p className="panel-description">{sessionStrategy ? "Session bias first; higher EMA rows are context only" : "MA stack across timeframes"}</p>
               <div className="trend-head"><span>TIMEFRAME</span><span>MA STATE</span></div>{stream.trends.map((trend, index) => <div className="trend-row" key={index}><span>{trend.frame}{index === 0 && <small>chart</small>}</span><span className={"trend-pill " + trend.state.toLowerCase()}><i/>{trend.state}</span></div>)}
               <div className="trend-note"><CheckCheck size={13}/> Based on closed candles</div></section>
