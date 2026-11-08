@@ -6,7 +6,7 @@ import { calculate,aggregate45,trendFromBars } from '../cloud-runner/runtime/str
 import { normalizeMarkets,normalizeBars } from '../cloud-runner/runtime/client.js';
 import { DerivEngine, selectedMarkets } from '../cloud-runner/runtime/engine.js';
 import { DEFAULT_CONFIG } from '../cloud-runner/runtime/types.js';
-for(const file of ['types','strategy','client','engine']){
+for(const file of ['types','strategy','session-fvg','client','engine']){
   const source=fs.readFileSync('lib/deriv/'+file+'.ts','utf8');
   const expected='// Generated from lib/deriv/'+file+'.ts. Run node scripts/build-deriv-runner.mjs after changes.\n'+ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
   assert.equal(fs.readFileSync('cloud-runner/runtime/'+file+'.js','utf8'),expected,'Cloud runner must match the browser engine');

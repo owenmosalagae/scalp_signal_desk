@@ -7,7 +7,7 @@ const source = path.resolve(root, '..');
 const shared = path.join(root, 'app/shared');
 await rm(shared, { recursive: true, force: true });
 await mkdir(shared, { recursive: true });
-for (const name of ['desk.tsx', 'chart.tsx', 'deriv-markets.tsx', 'use-deriv.ts', 'globals.css']) {
+for (const name of ['desk.tsx', 'chart.tsx', 'deriv-markets.tsx', 'strategy-settings.tsx', 'strategy-guide.tsx', 'use-deriv.ts', 'globals.css']) {
   await cp(path.join(source, 'app', name), path.join(shared, name));
 }
 await rm(path.join(root, 'lib'), { recursive: true, force: true });

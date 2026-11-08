@@ -1,9 +1,18 @@
 // Generated from lib/deriv/engine.ts. Run node scripts/build-deriv-runner.mjs after changes.
 import { DerivClient } from './client.js';
 import { calculate, trendFromBars, aggregate45, sha256 } from './strategy.js';
-import { FRAMES } from './types.js';
+import { FRAMES, resolveConfig, STRATEGIES } from './types.js';
+import { calculateSessionFvg } from './session-fvg.js';
 export function selectedMarkets(markets, config) {
-    return markets.filter(m => !m.suspended && (config.scope === 'both' || config.scope === m.category || (config.scope === 'watchlist' && config.symbols.includes(m.code))));
+    const resolved = resolveConfig(config);
+    return markets.filter(m => !m.suspended && !(resolved.strategy === 'session_fvg' && resolved.session.mode === 'new_york' && m.category !== 'forex') && (config.scope === 'both' || config.scope === m.category || (config.scope === 'watchlist' && config.symbols.includes(m.code))));
+}
+export function strategyStreamSeed(symbol, input) {
+    const config = resolveConfig(input);
+    // Preserve every legacy Ribbon stream and signal identity.
+    return config.strategy === 'scalp_ribbon'
+        ? 'scalp-ribbon-deriv-v1:' + JSON.stringify([symbol, config.timeframe, config.settings])
+        : 'session-fvg-deriv-v1:' + JSON.stringify([symbol, 'M5', config.session]);
 }
 async function pool(items, work) {
     let cursor = 0;
@@ -15,22 +24,22 @@ async function pool(items, work) {
     }));
 }
 export class DerivEngine {
-    config;
     owner;
     mode;
     callbacks;
     createClient;
+    config;
     client = null;
     stopped = false;
     monitors = new Map();
     status = { phase: 'connecting', message: 'Connecting to Deriv…', loaded: 0, total: 0, errors: {} };
     timer;
     constructor(config, owner, mode, callbacks, createClient = () => new DerivClient()) {
-        this.config = config;
         this.owner = owner;
         this.mode = mode;
         this.callbacks = callbacks;
         this.createClient = createClient;
+        this.config = resolveConfig(config);
     }
     update(patch) { this.status = { ...this.status, ...patch, errors: { ...this.status.errors } }; this.callbacks.status(this.status); }
     async run() {
@@ -123,7 +132,7 @@ export class DerivEngine {
             if (this.stopped || disconnected)
                 return;
             try {
-                const streamId = await sha256('scalp-ribbon-deriv-v1:' + JSON.stringify([market.code, this.config.timeframe, this.config.settings]));
+                const streamId = await sha256(strategyStreamSeed(market.code, this.config));
                 const monitor = { market, streamId, frames: new Map(), quoteTime: 0, sent: new Set(), lastPublished: 0, lastClosed: 0, dirty: true, busy: false, retryAt: 0, streaming: market.open, refreshed: new Map(), refreshing: new Set() };
                 this.monitors.set(market.code, monitor);
                 let bars;
@@ -136,7 +145,8 @@ export class DerivEngine {
                     monitor.streaming = false;
                     bars = await client.history(market.code, seconds, false);
                 }
-                if (bars.length < Math.max(...this.config.settings.periods, this.config.settings.atrPeriod) + 2)
+                const minimum = this.config.strategy === 'session_fvg' ? Math.max(this.config.session.atrPeriod, this.config.session.swingLookback) + 5 : Math.max(...this.config.settings.periods, this.config.settings.atrPeriod) + 2;
+                if (bars.length < minimum)
                     throw new Error('Not enough candle history for the strategy.');
                 monitor.frames.set(seconds, bars);
                 monitor.refreshed.set(seconds, Date.now());
@@ -220,18 +230,23 @@ export class DerivEngine {
             return;
         monitor.busy = true;
         try {
-            const result = calculate(bars, this.config.settings, monitor.market.tickSize, monitor.market.digits, seconds, now);
-            const newSignals = result.signals.filter(s => !monitor.sent.has(s.candleTime));
-            const signals = await Promise.all(newSignals.map(async (s) => ({ ...s, id: await sha256(monitor.streamId + ':' + s.candleTime) })));
-            const trends = [{ frame: this.config.timeframe + ' (chart)', state: result.state }, ...[['M15', 900], ['M45', 2700], ['H1', 3600], ['H4', 14400], ['D1', 86400]].map(([label, sec]) => {
+            const result = this.config.strategy === 'scalp_ribbon' ? calculate(bars, this.config.settings, monitor.market.tickSize, monitor.market.digits, seconds, now) : null;
+            const session = this.config.strategy === 'session_fvg' ? calculateSessionFvg(bars, this.config.session, monitor.market.tickSize, monitor.market.digits, this.config.session.atrPeriod, now) : null;
+            const candidates = session?.signals || result.signals;
+            const newSignals = candidates.filter(s => !monitor.sent.has(s.candleTime));
+            const signals = await Promise.all(newSignals.map(async (s) => ({ ...s, strategyId: this.config.strategy, strategyVersion: STRATEGIES[this.config.strategy].version, id: await sha256(monitor.streamId + ':' + s.candleTime) })));
+            const trends = [{ frame: this.config.timeframe + ' (chart)', state: session?.state || result.state }, ...[['M15', 900], ['M45', 2700], ['H1', 3600], ['H4', 14400], ['D1', 86400]].map(([label, sec]) => {
                     const source = sec === 2700 ? aggregate45(monitor.frames.get(900) || [], now) : monitor.frames.get(Number(sec)) || [];
                     return { frame: String(label), state: trendFromBars(source, this.config.settings.periods, Number(sec), now) };
                 })];
             const close = bars.at(-1).close;
             await this.callbacks.snapshot({ streamId: monitor.streamId, source: 'Deriv API', symbolCode: monitor.market.code, scannerMode: this.mode, scannerOwner: this.owner,
+                strategyId: this.config.strategy, strategyVersion: STRATEGIES[this.config.strategy].version,
+                ...(session ? { sessionSettings: this.config.session, sessionContext: session.context } : {}),
                 backfill: monitor.lastPublished === 0, symbol: monitor.market.name, timeframe: this.config.timeframe, timeframeSeconds: seconds, broker: 'Deriv API · public prices',
                 digits: monitor.market.digits, tickSize: monitor.market.tickSize, generatedAt: now, quoteTime: monitor.quoteTime, bid: close, ask: close,
-                marketOpen: monitor.market.open, settings: this.config.settings, trends: trends, candles: result.candles, signals });
+                marketOpen: monitor.market.open, settings: session ? { ...this.config.settings, atrPeriod: this.config.session.atrPeriod, targets: this.config.session.targets } : this.config.settings, trends: trends,
+                candles: session ? bars.slice(-180).map(bar => ({ ...bar, emas: Array(5).fill(bar.close), state: 'Neutral' })) : result.candles, signals });
             for (const s of newSignals)
                 monitor.sent.add(s.candleTime);
             monitor.lastPublished = now;

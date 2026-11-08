@@ -42,6 +42,8 @@ npm run check
 npm run build
 ```
 
+The test command also regenerates the shared Deriv runtime and checks strategy switching, Session Range + FVG confirmation rules, and backend JSON settings/signal storage using isolated fixtures. Installing dependencies in `vercel/` is sufficient for these checks. The backend, frontend and any running cloud scanner must all receive the strategy-switching update before Session FVG is enabled; see `../docs/STRATEGY_SWITCHING.md`.
+
 Before signing in, `/` redirects to `/sign-in` and `/api/state` returns 401. After owner sign-in, check saved signals, selected chart history, a timeframe/settings change, scanner lease handling and a new confirmed signal. Sign out and confirm the API again returns 401. Verify a different GitHub account cannot enter. Backend credentials are never sent to the browser or copied from request headers.
 
 Connector pairing and runner-configuration downloads remain on the existing private desk, using its existing ChatGPT sign-in. A link above the Vercel dashboard opens that desk; the Vercel proxy deliberately does not expose service-token download or connector pairing endpoints. Existing paired connectors and a configured cloud runner continue to use their original backend address. The direct browser scanner supports the same markets and timeframes as the original app.

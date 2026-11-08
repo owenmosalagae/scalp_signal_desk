@@ -36,6 +36,8 @@ export async function POST(request: Request) {
       "INSERT INTO signals (id,stream_id,payload,confirmed_at,received_at) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING"
     ).bind(signal.id, snapshot.streamId, JSON.stringify({
       ...signal, streamId: snapshot.streamId, symbol: snapshot.symbol, timeframe: snapshot.timeframe, digits: snapshot.digits, backfilled: snapshot.backfill || false, source: snapshot.source || "MT5", broker: snapshot.broker,
+      strategyId: snapshot.strategyId || 'scalp_ribbon', strategyVersion: snapshot.strategyVersion || '1',
+      settings: snapshot.settings, ...(snapshot.sessionSettings ? { sessionSettings: snapshot.sessionSettings } : {}),
     }), signal.confirmedAt, now)),
   ];
   await env.DB.batch(statements);

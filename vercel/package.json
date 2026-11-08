@@ -13,9 +13,9 @@
     "prebuild": "npm run prepare:shared",
     "build": "next build --webpack",
     "start": "next start",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test tests/*.test.mjs ../tests/session-fvg.test.mjs",
     "check": "npm run prepare:shared && tsc --noEmit",
-    "pretest": "npm run prepare:shared"
+    "pretest": "npm run prepare:shared && node ../scripts/build-deriv-runner.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.31.0",
