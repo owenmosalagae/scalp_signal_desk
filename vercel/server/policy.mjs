@@ -12,6 +12,7 @@ export function isOwnerSession(session, environment = process.env) {
 
 const routes = new Map([
   ['/api/state', ['GET']],
+  ['/api/robot/control', ['GET', 'POST']],
   ['/api/deriv/config', ['GET', 'POST']],
   ['/api/deriv/lease', ['POST']],
   ['/api/ingest', ['POST']],

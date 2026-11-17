@@ -158,6 +158,30 @@ class WatchlistTests(unittest.TestCase):
                                               DEFAULT_SETTINGS, "Test Server", mt5.terminal)
         self.assertEqual([monitor.symbol for monitor in monitors], ["Step Index"])
 
+    def test_robot_only_receives_snapshots_after_successful_app_delivery(self):
+        from unittest.mock import Mock
+        mt5 = FakeTerminal()
+        executor = Mock()
+        delivered = []
+
+        def send(site, token, snapshot):
+            if snapshot["symbol"] == "Step Index":
+                raise urllib.error.URLError("App unavailable")
+            delivered.append(snapshot)
+
+        with patch.dict(sys.modules, {"MetaTrader5": mt5}), \
+                patch("robot.Robot", return_value=executor), \
+                patch.object(connector, "session_token", return_value="fixture-key"), \
+                patch.object(connector, "post_snapshot", side_effect=send), \
+                patch.object(connector.time, "sleep", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                connector.run(arguments(symbols="Step Index,Boom 500 Index", timeframe="M5", robot=True))
+        executor.process.assert_called_once_with(delivered[0])
+        self.assertEqual(delivered[0]["symbol"], "Boom 500 Index")
+        executor.observe.assert_called_once()
+        executor.close.assert_called_once()
+        self.assertTrue(mt5.shutdown_called)
+
     def test_one_failed_report_does_not_block_other_markets_and_is_retried(self):
         mt5 = FakeTerminal()
         calls = []

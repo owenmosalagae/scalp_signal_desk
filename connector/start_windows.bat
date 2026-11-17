@@ -6,13 +6,15 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+echo Preparing Python environment...
 if not exist ".venv\Scripts\python.exe" py -3 -m venv .venv
 if errorlevel 1 (
   echo Could not create the Python environment.
   pause
   exit /b 1
 )
-".venv\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -r requirements.txt
+echo Checking required packages...
+".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt
 if errorlevel 1 (
   echo Package installation failed. Check your internet connection and try again.
   pause

@@ -84,7 +84,11 @@ during a short interruption are retried. On connection it backfills up to 100
 historical setups per symbol, identified by their original candle time.
 
 Browser alerts require the app to remain open. A fully closed app does not receive
-push messages. The connector reports setups without placing trade orders.
+push messages. The default connector reports setups without placing trade orders.
+An opt-in [demo trading robot](connector/ROBOT.md) can execute new MT5 Scalp Ribbon
+signals automatically with risk controls; launch it with `connector/start_robot_demo.bat`.
+For the app's Trading robot controls, use [mobile control mode](connector/CLOUD.md)
+with `connector/start_robot_cloud.bat` on a Windows PC or VPS.
 
 Read the complete connector instructions in [connector/README.md](connector/README.md).
 Edit connector/settings.json and restart to change the strategy settings.
@@ -173,3 +177,16 @@ terminal remains required.
 
 - [MetaTrader 5 Python integration](https://www.mql5.com/en/docs/python_metatrader5)
 - [MetaTrader 5 candle history API](https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrompos_py)
+
+## Explicit real-account runner
+
+Real MT5 account support uses `connector/start_robot_real.bat`, verifies the account
+number, starts paused and requires separate real-money confirmation in the app.
+See [Real accounts](connector/REAL_ACCOUNTS.md). Demo launchers still block real accounts.
+
+## Simplified connection and switching
+
+Use `connector/start_trading.bat` for demo or real accounts. It detects the account
+already connected in MT5, restores that account's watchlist, and connects paused.
+The app restores previously saved account-specific risk limits and market
+selections without restoring trading authorization. See [Quick start](connector/QUICK_START.md).

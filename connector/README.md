@@ -1,5 +1,8 @@
 # Scalp Signal Desk — Windows MT5 connector
 
+**Recommended:** use `start_trading.bat` for account detection and saved demo/real
+setups. See [Quick start](QUICK_START.md). The older launchers below remain supported.
+
 One connector monitors a saved watchlist of up to 20 symbols from the connected MT5 terminal.
 
 ## First setup
@@ -65,7 +68,10 @@ Console heartbeat summaries appear approximately once a minute.
 The first successful connection backfills up to 100 setups per symbol.
 Only recent newly received setups trigger alerts. Keep the app open for browser
 notifications. A fully closed app does not receive push messages.
-The connector reads market data and reports setups without placing trade orders.
+The default connector reads market data and reports setups without placing trade orders.
+For opt-in automatic **demo** execution, see [ROBOT.md](ROBOT.md) and use
+`start_robot_demo.bat`. For mobile start/pause, risk controls and reporting, use
+`start_robot_cloud.bat` and read [CLOUD.md](CLOUD.md).
 
 ## Strategy
 
@@ -112,3 +118,8 @@ https://www.mql5.com/en/docs/python_metatrader5
 https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py
 https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrompos_py
 https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
+
+## Real accounts
+
+For explicit real-account support, read [REAL_ACCOUNTS.md](REAL_ACCOUNTS.md) and use
+`start_robot_real.bat`. Demo launchers continue to reject real accounts.

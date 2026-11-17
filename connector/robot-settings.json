@@ -1,0 +1,12 @@
+{
+  "riskPercent": 0.25,
+  "dailyLossPercent": 2.0,
+  "maxOpenRiskPercent": 1.0,
+  "maxPositions": 3,
+  "maxSignalAgeSeconds": 30,
+  "maxQuoteAgeSeconds": 10,
+  "maxSpreadR": 0.1,
+  "maxEntryDriftR": 0.2,
+  "costReservePercent": 10.0,
+  "magic": 7311701
+}

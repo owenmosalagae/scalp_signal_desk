@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Activity, ArrowDownLeft, ArrowUpRight, Bell, Check, CheckCheck, ChevronRight, CircleHelp, Copy, Download, ExternalLink, History, Layers3, Link2, Radio, Search, Settings2, ShieldCheck, Volume2, X } from "lucide-react";
 import type { DeskState, StoredSignal } from "@/lib/contracts";
 import { example } from "@/lib/example";
+import RobotPanel from "./robot-panel";
 import RibbonChart from "./chart";
 import DerivMarkets from "./deriv-markets";
 import { useDerivScanner } from "./use-deriv";
@@ -15,7 +16,7 @@ import MarketPicker from "./market-picker";
 import { feedHealth } from "@/lib/deriv/feed-health";
 import { withRequestTimeout } from "@/lib/deriv/request";
 
-type Tab = "monitor" | "signals" | "strategy" | "connect";
+type Tab = "robot" | "monitor" | "signals" | "strategy" | "connect";
 const money = (price: number, digits = 2) => price.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 const timestamp = (time: number) => new Date(time * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 function report(signal: StoredSignal) {
@@ -259,6 +260,7 @@ export default function Desk() {
 
   const tabs: { id: Tab; title: string; icon: typeof Activity }[] = [
     { id: "monitor", title: "Overview", icon: Activity }, { id: "signals", title: "Signal history", icon: History },
+    { id: "robot", title: "Trading robot", icon: ShieldCheck },
     { id: "strategy", title: "Strategy", icon: Layers3 }, { id: "connect", title: "Markets & connection", icon: Link2 },
   ];
 
@@ -282,13 +284,13 @@ export default function Desk() {
         <div className="top-actions"><span className="private-tag"><ShieldCheck size={12}/> Private workspace</span><button className={"icon-button " + (alerts ? "enabled" : "")} onClick={enableAlerts} aria-label={alerts ? "Disable alerts" : "Enable alerts"}><Bell size={17}/>{alerts && <i/>}</button><div className="avatar small">OM</div></div>
       </header>
       <main className="content">
-        <div className="page-heading"><div><p className="eyebrow">YOUR STRATEGY. EVERY CONFIRMED SETUP.</p><h1>{tab === "monitor" ? "Market overview" : tab === "signals" ? "Signal history" : tab === "strategy" ? strategyName(deriv.config.strategy) : "Your markets"}</h1>
-          <p className="subtitle">{tab === "monitor" ? "Follow your selected strategy and its confirmed trade levels." : tab === "signals" ? "A record of your confirmed setups and their original trade levels." : tab === "strategy" ? "Read the confirmation, invalidation and price-source rules for your active scanner." : "Choose your markets and scan directly with Deriv."}</p></div>
+        <div className="page-heading"><div><p className="eyebrow">YOUR STRATEGY. EVERY CONFIRMED SETUP.</p><h1>{tab === "robot" ? "Trading robot" : tab === "monitor" ? "Market overview" : tab === "signals" ? "Signal history" : tab === "strategy" ? strategyName(deriv.config.strategy) : "Your markets"}</h1>
+          <p className="subtitle">{tab === "robot" ? "Manage account-bound automatic trading from your phone or computer." : tab === "monitor" ? "Follow your selected strategy and its confirmed trade levels." : tab === "signals" ? "A record of your confirmed setups and their original trade levels." : tab === "strategy" ? "Read the confirmation, invalidation and price-source rules for your active scanner." : "Choose your markets and scan directly with Deriv."}</p></div>
           <div className="heading-actions">{tab !== "connect" && <button className="button secondary" onClick={enableAlerts}><Bell size={15}/>{alerts ? "Alerts on" : "Enable alerts"}</button>}<button className="button primary" onClick={() => setTab("connect")}><Link2 size={15}/>Manage markets<ArrowUpRight size={14}/></button></div></div>
 
-        {apiError && online && <div className="notice" role="alert">{apiError} Showing the last saved prices.<button onClick={() => refreshData.current()}>Retry now</button></div>}
-        {isExample && tab !== "connect" && <div className="notice"><span className="example-tag">EXAMPLE</span><span>{loading ? "Checking your live feeds. " : ""}You're viewing example prices until a live market is ready. Deriv candle histories load automatically.</span><button onClick={() => data.streams.length ? setManualExample(false) : setTab("connect")}>{data.streams.length ? "Return to live" : "Set up connection"}<ChevronRight size={13}/></button></div>}
-        {!isExample && health.notice && <div className={"notice " + (health.tone === "red" ? "error" : "")} role="status"><Radio size={16}/><span>{health.notice}</span>{["delayed", "waiting", "stale", "reconnecting"].includes(health.kind) && <button onClick={() => refreshData.current()}>Retry now</button>}</div>}
+        {tab !== "robot" && apiError && online && <div className="notice" role="alert">{apiError} Showing the last saved prices.<button onClick={() => refreshData.current()}>Retry now</button></div>}
+        {isExample && tab !== "connect" && tab !== "robot" && <div className="notice"><span className="example-tag">EXAMPLE</span><span>{loading ? "Checking your live feeds. " : ""}You're viewing example prices until a live market is ready. Deriv candle histories load automatically.</span><button onClick={() => data.streams.length ? setManualExample(false) : setTab("connect")}>{data.streams.length ? "Return to live" : "Set up connection"}<ChevronRight size={13}/></button></div>}
+        {tab !== "robot" && !isExample && health.notice && <div className={"notice " + (health.tone === "red" ? "error" : "")} role="status"><Radio size={16}/><span>{health.notice}</span>{["delayed", "waiting", "stale", "reconnecting"].includes(health.kind) && <button onClick={() => refreshData.current()}>Retry now</button>}</div>}
 
         {(tab === "monitor" || tab === "signals") && <>
           <div className="stream-bar"><div className="stream-select"><span className="gold-coin">Au</span><div><b>{stream.symbol}</b><small>{stream.timeframe} · {isExample ? "Example workspace" : stream.broker}</small></div>
@@ -334,6 +336,8 @@ export default function Desk() {
           <SignalTable compact={tab === "monitor"}/>{tab === "signals" && filtered.length > historyLimit && <button className="history-link" onClick={() => setHistoryLimit(value => value + 100)}>Show more signals ({historyLimit} of {filtered.length})<ChevronRight size={13}/></button>}{tab === "monitor" && <button className="history-link" onClick={() => setTab("signals")}>View signal history<ChevronRight size={13}/></button>}
         </section>}
 
+        {tab === "robot" && <RobotPanel/>}
+
         {tab === "strategy" && <StrategyGuide strategy={deriv.config.strategy} openSettings={() => setTab("connect")}/>}
 
         {tab === "connect" && <><DerivMarkets {...deriv}/><details className="mt5-alternative"><summary>Use the MT5 connector instead</summary><div className="connection-grid"><section className="panel prose connection-steps"><div className="connection-title"><span className="connector-icon"><Link2 size={24}/></span><div><h2>Your MT5, connected.</h2><p>One saved watchlist. One connector on your Windows computer.</p></div></div>
@@ -341,9 +345,9 @@ export default function Desk() {
           <div className="setup-step"><span>2</span><div><h3>Download the Windows connector</h3><p>Extract the complete ZIP. If needed, install 64-bit Python 3.12 or later. The connector uses MetaQuotes' official Python integration.</p><a className="button primary" href="/Scalp_MT5_Connector.zip" download><Download size={15}/>Download connector</a><a className="text-link python-link" href="https://www.python.org/downloads/windows/" target="_blank" rel="noreferrer">Get Python<ExternalLink size={12}/></a></div></div>
           <div className="setup-step"><span>3</span><div><h3>Save your watchlist and pair once</h3><p>Double-click <code>start_windows.bat</code>. Enter up to 20 exact Market Watch names separated by commas, such as <code>Step Index, Volatility 75 Index</code>, then choose a timeframe. Choose whether Windows should remember pairing, then approve it in your browser. Later starts reuse your saved setup.</p></div></div>
           <div className="setup-step"><span>4</span><div><h3>Open your app</h3><p>Keep the connector running and select a market from the overview dropdown. Use <code>configure_windows.bat</code> to change your watchlist. Optional <code>enable_startup.bat</code> starts the connector minimized when you sign in to Windows. Use <code>disable_startup.bat</code> to turn that off. Enable app alerts and keep the app open for notifications.</p><button className="button secondary" onClick={() => { setManualExample(false); setTab("monitor"); }}>Open overview<ArrowUpRight size={14}/></button></div></div>
-        </section><div><section className="panel prose"><div className="section-icon"><ShieldCheck size={20}/></div><h2>Your private connection</h2><p>Broker credentials stay inside MT5. If you choose to remember pairing, the app connection key is encrypted with Windows Data Protection for your Windows account. Use forget_pairing.bat to remove the saved key for future starts.</p><p>The connector reads candle and quote data. It reports setups without placing trades.</p></section><section className="panel prose connection-status-card"><p className="eyebrow">CONNECTION STATUS</p><h2><span className={"status-dot " + (connected ? "green" : "amber")}/>{connected ? "Terminal connected" : "Waiting for your terminal"}</h2><p>{connected ? stream.symbol + " · " + stream.timeframe + " · " + stream.broker : "Your overview uses clearly labelled example data until the first MT5 update arrives."}</p>{!isExample && <p>Last heartbeat {timestamp(stream.receivedAt)}<br/>Last quote {timestamp(stream.quoteTime)}</p>}<button className="text-link" onClick={() => { setManualExample(true); setTab("monitor"); }}>Explore the example<ArrowUpRight size={14}/></button></section></div></div></details></>}
+        </section><div><section className="panel prose"><div className="section-icon"><ShieldCheck size={20}/></div><h2>Your private connection</h2><p>Broker credentials stay inside MT5. If you choose to remember pairing, the app connection key is encrypted with Windows Data Protection for your Windows account. Use forget_pairing.bat to remove the saved key for future starts.</p><p>The default connector reports candle and quote data without placing trades. Use the Trading robot tab and its dedicated runner for account-bound automatic execution.</p></section><section className="panel prose connection-status-card"><p className="eyebrow">CONNECTION STATUS</p><h2><span className={"status-dot " + (connected ? "green" : "amber")}/>{connected ? "Terminal connected" : "Waiting for your terminal"}</h2><p>{connected ? stream.symbol + " · " + stream.timeframe + " · " + stream.broker : "Your overview uses clearly labelled example data until the first MT5 update arrives."}</p>{!isExample && <p>Last heartbeat {timestamp(stream.receivedAt)}<br/>Last quote {timestamp(stream.quoteTime)}</p>}<button className="text-link" onClick={() => { setManualExample(true); setTab("monitor"); }}>Explore the example<ArrowUpRight size={14}/></button></section></div></div></details></>}
 
-        <footer className="page-footer"><span><span className="status-dot green"/>{strategyName(stream.strategyId)} <span className="footer-separator">/</span> {sessionStrategy ? "Range + displacement + retest" : "EMA + ATR"}</span><span>{isExample ? "Example view · live markets are loading" : "Times shown in your device timezone · source labelled per market"}</span></footer>
+        {tab === "robot" ? <footer className="page-footer"><span>Account-bound trading · Scalp Ribbon on MT5</span><span>New entries require a connected Windows runner</span></footer> : <footer className="page-footer"><span><span className="status-dot green"/>{strategyName(stream.strategyId)} <span className="footer-separator">/</span> {sessionStrategy ? "Range + displacement + retest" : "EMA + ATR"}</span><span>{isExample ? "Example view · live markets are loading" : "Times shown in your device timezone · source labelled per market"}</span></footer>}
       </main>
     </div>
     {toast && <div className="toast" role="status"><Check size={17}/><span>{toast}</span><button className="icon-button" onClick={() => setToast("")} aria-label="Dismiss notification"><X size={15}/></button></div>}

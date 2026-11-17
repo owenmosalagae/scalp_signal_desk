@@ -1,5 +1,6 @@
 """Run on the Windows computer where MetaTrader 5 is installed."""
 import argparse
+import os
 from dataclasses import dataclass, field
 import base64
 import json
@@ -309,15 +310,67 @@ def connect_terminal(mt5, profile):
         time.sleep(10)
 
 
+def easy_account_setup(mt5, account, args, profile):
+    """Detect the terminal account; never log into or switch a broker account."""
+    modes = {mt5.ACCOUNT_TRADE_MODE_DEMO: "demo", mt5.ACCOUNT_TRADE_MODE_REAL: "real"}
+    mode = modes.get(account.trade_mode)
+    if mode is None:
+        raise ValueError("Only demo and real MT5 accounts are supported; contest accounts are blocked.")
+    print("\nSCALP SIGNAL DESK —", mode.upper(), "ACCOUNT")
+    print("Account:", account.login, "| Server:", account.server)
+    print("Connecting does not start trading. Start remains a separate action in the app.")
+    try:
+        saved = preferences.load_account_profile(account.server, account.login, mode)
+    except ValueError:
+        print("Saved account setup needs replacing. Choose S below.")
+        saved = None
+    active = saved or profile
+    print("Markets:", ", ".join(active["symbols"]), "| Timeframe:", active["timeframe"])
+    answer = input("Enter = connect paused | S = change markets | Q = cancel: ").strip().lower()
+    if answer == "q":
+        raise KeyboardInterrupt()
+    if answer not in ("", "s"):
+        raise ValueError("Choose Enter, S or Q; nothing has been started.")
+    preferences.save_profile(active)
+    if answer == "s":
+        args.configure = True
+    else:
+        args.configure = False
+    # Resolve and validate saved settings using the same rules as normal setup.
+    active = resolve_profile(args)
+    current = mt5.account_info()
+    if current is None or (current.server, current.login, current.trade_mode) != (account.server, account.login, account.trade_mode):
+        raise RuntimeError("MT5 account changed during setup. Relaunch to verify the intended account.")
+    preferences.save_account_profile(account.server, account.login, mode, active)
+    args.account_mode, args.account_login = mode, str(account.login)
+    args.robot, args.remote_control = True, True
+    return active
+
+
 def run(args):
     import MetaTrader5 as mt5
 
     settings_path = Path(__file__).with_name("settings.json")
     settings = json.loads(settings_path.read_text()) if settings_path.exists() else DEFAULT_SETTINGS
     validate(settings)
-    profile = resolve_profile(args)
+    if getattr(args, "remote_control", False) and not getattr(args, "robot", False):
+        raise ValueError("--remote-control requires --robot.")
+    if getattr(args, "account_mode", "demo") == "real" and not (getattr(args, "robot", False) and getattr(args, "remote_control", False)):
+        raise ValueError("Real account execution requires --robot --remote-control.")
+    if getattr(args, "easy_start", False):
+        profile = preferences.load_profile() or dict(symbols=["Step Index"], timeframe="M5", terminal=None, rememberPairing=True)
+    else:
+        profile = resolve_profile(args)
     terminal, account = connect_terminal(mt5, profile)
+    robot = None
     try:
+        if getattr(args, "easy_start", False):
+            profile = easy_account_setup(mt5, account, args, profile)
+        if getattr(args, "robot", False):
+            from robot import Robot, load_config
+            robot = Robot(mt5, load_config(Path(__file__).with_name("robot-settings.json")),
+                          preferences.data_directory(), account_mode=getattr(args, "account_mode", "demo"),
+                          expected_login=getattr(args, "account_login", None) or os.environ.get("SCALP_REAL_ACCOUNT_LOGIN"))
         executable = Path(getattr(terminal, "path", "")) / "terminal64.exe"
         if executable.is_file():
             profile["terminal"] = str(executable)
@@ -329,6 +382,10 @@ def run(args):
         print("Monitoring:", ", ".join(monitor.symbol for monitor in monitors), "|", profile["timeframe"])
         print("Stop with Ctrl+C. Change your watchlist using configure_windows.bat.")
         token = session_token(profile["rememberPairing"])
+        if robot is not None and getattr(args, "remote_control", False):
+            from remote_control import RemoteControl
+            robot.remote = RemoteControl(SITE_URL, token, robot, monitors)
+            print("Mobile control enabled. Runner starts PAUSED; open Trading robot in the app.")
         reauthenticated = False
         next_status = 0.0
         while True:
@@ -336,10 +393,20 @@ def run(args):
             current_account = mt5.account_info()
             if current_account is not None and (current_account.server, getattr(current_account, "login", None)) != (
                     account.server, getattr(account, "login", None)):
+                if robot is not None:
+                    raise RuntimeError("Account changed. No more entries will be sent. Run start_trading.bat to connect the new account paused.")
                 terminal, account = connect_terminal(mt5, profile)
                 broker = str(account.server)
                 monitors = create_monitors(mt5, profile, settings, broker, terminal)
                 print("MT5 account changed. Refreshed the saved watchlist for", broker)
+            if robot is not None:
+                if robot.remote is not None:
+                    try:
+                        robot.remote.heartbeat()
+                    except Exception as error:
+                        robot.remote.running = False
+                        print("Robot heartbeat unavailable:", error)
+                robot.observe()
             updated = 0
             for monitor in monitors:
                 if time.monotonic() < monitor.next_attempt:
@@ -347,6 +414,8 @@ def run(args):
                 try:
                     snapshot = market_snapshot(mt5, monitor, settings, broker)
                     post_snapshot(SITE_URL, token, snapshot)
+                    if robot is not None:
+                        robot.process(snapshot)
                     monitor.pending.clear()
                     monitor.retry_delay = 2
                     monitor.next_attempt = 0.0
@@ -360,6 +429,8 @@ def run(args):
                         preferences.forget_pairing()
                         token = session_token(profile["rememberPairing"], refresh=True)
                         reauthenticated = True
+                        if robot is not None and robot.remote is not None:
+                            robot.remote.token = token
                         break
                     print(f"{monitor.symbol}: server returned HTTP {error.code}; retrying.")
                     monitor.next_attempt = time.monotonic() + monitor.retry_delay
@@ -373,6 +444,8 @@ def run(args):
                 next_status = time.monotonic() + 60
             time.sleep(10)
     finally:
+        if robot is not None:
+            robot.close()
         mt5.shutdown()
 
 
@@ -383,6 +456,11 @@ def main():
     symbols.add_argument("--symbols", help="Comma-separated exact MT5 symbols")
     parser.add_argument("--timeframe")
     parser.add_argument("--terminal", help="Optional full path to terminal64.exe")
+    parser.add_argument("--remote-control", action="store_true", help="Require mobile app permission before every entry")
+    parser.add_argument("--robot", action="store_true", help="Automatically execute fresh Scalp Ribbon signals; defaults to demo")
+    parser.add_argument("--easy-start", action="store_true", help="Detect the MT5 account and restore its saved setup; always app-controlled")
+    parser.add_argument("--account-mode", choices=("demo", "real"), default="demo")
+    parser.add_argument("--account-login", help="Exact MT5 account number, required for real mode")
     parser.add_argument("--configure", action="store_true", help="Edit the saved watchlist")
     parser.add_argument("--remember-pairing", action=argparse.BooleanOptionalAction, default=None)
     maintenance = parser.add_mutually_exclusive_group()

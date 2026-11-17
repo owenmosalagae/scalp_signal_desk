@@ -29,3 +29,12 @@ export const derivLease = sqliteTable("deriv_lease", {
   expiresAt: integer("expires_at").notNull(),
   heartbeatAt: integer("heartbeat_at").notNull(),
 });
+
+export const robotControl = sqliteTable("robot_control", {
+  id: text("id").primaryKey(), revision: integer("revision").notNull(), enabled: integer("enabled").notNull(),
+  runnerId: text("runner_id").notNull(), accountKey: text("account_key").notNull(), payload: text("payload").notNull(), symbols: text("symbols").notNull(),
+});
+export const robotRunner = sqliteTable("robot_runner", {
+  id: text("id").primaryKey(), runnerId: text("runner_id").notNull(), accountKey: text("account_key").notNull(),
+  payload: text("payload").notNull(), receivedAt: integer("received_at").notNull(),
+});
