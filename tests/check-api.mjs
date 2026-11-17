@@ -39,7 +39,7 @@ for (const [from, to] of [
   let source = fs.readFileSync(from, "utf8")
     .replace(/import \{ env \} from ["']cloudflare:workers["'];/, 'const env = globalThis.testEnv;')
     .replace(/["']@\/lib\/contracts["']/g, '"./check-contracts.mjs"')
-    .replace(/["']@\/lib\/deriv\/types["']/g, '"./check-deriv-types.mjs"');
+    .replace(/["'](?:@\/lib\/deriv\/types|\.\/deriv\/types\.ts)["']/g, '"./check-deriv-types.mjs"');
   fs.writeFileSync(to, ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText);
 }
 const ingest = await import("../.sites-runtime/check-ingest.mjs");
@@ -61,7 +61,7 @@ async function post(body, origin) {
     method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
   }));
 }
-assert.deepEqual(await (await state.GET()).json(), { streams: [], signals: [] });
+assert.deepEqual(await (await state.GET()).json(), { streams: [], signals: [], scanner: null });
 assert.equal((await post(fixture)).status, 200);
 let result = await (await state.GET()).json();
 assert.equal(result.signals.length, 1);
@@ -115,7 +115,8 @@ const owner=crypto.randomUUID(),other=crypto.randomUUID();
 function derivRequest(path,body,headers={}){return new Request("https://desk.example"+path,{method:"POST",headers:{"content-type":"application/json",origin:"https://desk.example",...headers},body:JSON.stringify(body)});}
 async function lease(owner,action="acquire",mode="browser"){return leaseRoute.POST(derivRequest("/api/deriv/lease",{owner,action,mode}));}
 assert.equal((await (await configRoute.GET()).json()).config.scope,"both");
-const config={enabled:true,scope:"forex",symbols:[],timeframe:"M15",settings:fixture.settings};
+const { DEFAULT_SESSION } = await import("../.sites-runtime/check-deriv-types.mjs");
+const config={strategy:"scalp_ribbon",session:DEFAULT_SESSION,enabled:true,scope:"forex",symbols:[],timeframe:"M15",settings:fixture.settings};
 assert.equal((await configRoute.POST(derivRequest("/api/deriv/config",config))).status,200);
 assert.deepEqual((await (await configRoute.GET()).json()).config,config);
 assert.equal((await configRoute.POST(derivRequest("/api/deriv/config",{...config,timeframe:"M45"}))).status,400);

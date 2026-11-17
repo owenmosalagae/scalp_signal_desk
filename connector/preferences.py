@@ -1,5 +1,6 @@
 """Local watchlist, Windows-protected pairing and opt-in startup."""
 import ctypes
+import hashlib
 import json
 import os
 import subprocess
@@ -149,3 +150,28 @@ def set_startup(script, enabled):
     )
     subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
                    check=True, env=environment, capture_output=True, text=True, timeout=30)
+
+
+def account_profile_path(server, login, mode):
+    identity = json.dumps([server, str(login), mode], separators=(",", ":"))
+    key = hashlib.sha256(identity.encode()).hexdigest()
+    return data_directory() / "profiles" / (key + ".json")
+
+
+def load_account_profile(server, login, mode):
+    path = account_profile_path(server, login, mode)
+    if not path.exists():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError("Profile is not an object")
+        return value
+    except (ValueError, OSError) as error:
+        raise ValueError("Saved account setup could not be read. Use the launcher's S option to replace it.") from error
+
+
+def save_account_profile(server, login, mode, profile):
+    # Save preferences only: never credentials, balances or trading permission.
+    allowed = {key: profile[key] for key in ("symbols", "timeframe", "terminal", "rememberPairing")}
+    write_atomic(account_profile_path(server, login, mode), json.dumps(allowed, indent=2).encode())
